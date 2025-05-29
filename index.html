@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Radar Marinho - Drone Ambiental</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #001f33, #00334d);
+            font-family: 'Segoe UI', sans-serif;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            gap: 30px;
+            padding: 20px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            border-radius: 15px;
+            background-color: rgba(0, 51, 77, 0.8);
+        }
+
+        canvas {
+            border: 2px solid #00ccff;
+            border-radius: 10px;
+        }
+
+        #info {
+            background-color: #002b40;
+            padding: 20px;
+            border-radius: 10px;
+            width: 400px;
+            height: 600px;
+            overflow-y: auto;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            padding: 8px;
+            text-align: center;
+            border-bottom: 1px solid #005577;
+        }
+
+        th {
+            background-color: #00334d;
+            color: #00ccff;
+        }
+
+        .sim {
+            color: #00ff99;
+        }
+
+        .nao {
+            color: #ff6666;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <canvas id="canvas" width="600" height="600"></canvas>
+    <div id="info"></div>
+</div>
+
+<script>
+    const GRID_SIZE = 10;
+    const CELL_SIZE = 60;
+    const VISION_RANGE = 1;
+    const TEMPO_ENTRE_PASSOS = 1000;
+
+    const COR_DRONE = "#ff3333";
+    const COR_CIRCULO = "rgba(255, 102, 102, 0.15)";
+    const LAT_BASE = -12.5;
+    const LON_BASE = -38.5;
+    const OFFSET = 0.01;
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const info = document.getElementById("info");
+
+    let dronePos = [
+        Math.floor(Math.random() * GRID_SIZE),
+        Math.floor(Math.random() * GRID_SIZE)
+    ];
+
+    const oceano = Array.from({ length: GRID_SIZE }, () =>
+        Array.from({ length: GRID_SIZE }, () => {
+            const temperatura = +(Math.random() * 25 + 5).toFixed(1);
+            const ph = +(Math.random() * 2 + 6.0).toFixed(2);
+            const poluicao = +(Math.random() * 100).toFixed(0);
+            return { temperatura, ph, poluicao };
+        })
+    );
+
+    function getCoordenadasReais(x, y) {
+        const lat = (LAT_BASE + x * OFFSET).toFixed(5);
+        const lon = (LON_BASE + y * OFFSET).toFixed(5);
+        return { lat, lon };
+    }
+
+    function identificarBioma(x, y) {
+        if (x < 3) return "Recife de Corais";
+        if (x < 6) return "Mar Aberto";
+        return "Manguezal";
+    }
+
+    function eHabitavel(temp, ph, pol) {
+        return temp >= 15 && temp <= 30 && ph >= 7.0 && ph <= 8.5 && pol < 60;
+    }
+
+    function desenhar() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#001f33";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const [dx, dy] = dronePos;
+        const cx = dy * CELL_SIZE + CELL_SIZE / 2;
+        const cy = dx * CELL_SIZE + CELL_SIZE / 2;
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL_SIZE * VISION_RANGE + CELL_SIZE / 2, 0, 2 * Math.PI);
+        ctx.fillStyle = COR_CIRCULO;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = COR_DRONE;
+        ctx.fill();
+    }
+
+    function coletarDadosVisao() {
+        const dados = [];
+        const [x, y] = dronePos;
+        for (let dx = -VISION_RANGE; dx <= VISION_RANGE; dx++) {
+            for (let dy = -VISION_RANGE; dy <= VISION_RANGE; dy++) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < GRID_SIZE && ny < GRID_SIZE) {
+                    const ponto = oceano[nx][ny];
+                    const habitavel = eHabitavel(ponto.temperatura, ponto.ph, ponto.poluicao);
+                    dados.push({
+                        x: nx,
+                        y: ny,
+                        ...ponto,
+                        habitavel
+                    });
+                }
+            }
+        }
+        return dados;
+    }
+
+    function mostrarDados(dados) {
+        const coords = getCoordenadasReais(dronePos[0], dronePos[1]);
+        let html = `<h3>📍 Posição do Drone:</h3>`;
+        html += `(${dronePos[0]}, ${dronePos[1]})<br>`;
+        html += `Lat: ${coords.lat}, Lon: ${coords.lon}<br>`;
+        html += `<strong>🌊 Bioma:</strong> ${identificarBioma(dronePos[0], dronePos[1])}<br><br>`;
+
+        html += `<table><tr><th>Local</th><th>Temp</th><th>pH</th><th>Poluição</th><th>Habitável</th></tr>`;
+        dados.forEach(p => {
+            html += `<tr>
+                <td>(${p.x},${p.y})</td>
+                <td>${p.temperatura}°C</td>
+                <td>${p.ph}</td>
+                <td>${p.poluicao}%</td>
+                <td class="${p.habitavel ? 'sim' : 'nao'}">${p.habitavel ? 'Sim' : 'Não'}</td>
+            </tr>`;
+        });
+        html += `</table>`;
+        info.innerHTML = html;
+    }
+
+    function moverDrone() {
+        dronePos[0] = Math.max(0, Math.min(GRID_SIZE - 1, dronePos[0] + Math.floor(Math.random() * 3) - 1));
+        dronePos[1] = Math.max(0, Math.min(GRID_SIZE - 1, dronePos[1] + Math.floor(Math.random() * 3) - 1));
+
+        desenhar();
+        mostrarDados(coletarDadosVisao());
+    }
+
+    desenhar();
+    mostrarDados(coletarDadosVisao());
+    setInterval(moverDrone, TEMPO_ENTRE_PASSOS);
+</script>
+</body>
+</html>
